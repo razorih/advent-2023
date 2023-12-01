@@ -1,128 +1,66 @@
 use advent::read_input;
+use aho_corasick::AhoCorasick;
 
-fn silver(input: &str) -> u32 {
-    let mut calibration_value: u32 = 0;
-
-    for line in input.trim().lines() {
-        let mut first: Option<u8> = None;
-        let mut last: Option<u8> = None;
-
-        for char in line
-            .chars()
-            .filter_map(
-                |c| c.to_digit(10).map(|n| n as u8)
-            )
-        {
-            if first.is_none() {
-                first = Some(char)
-            }
-
-            last = Some(char)
-        }
-
-        if first.is_none() {
-            println!("invalid line, no numbers found? {}", line);
-            continue;
-        }
-
-        let first = first.unwrap() as u32;
-        let last = last.unwrap() as u32;
-
-        // Rebuild
-        let value: u32 = first * 10 + last;
-        calibration_value += value;
-    }
-
-    calibration_value
-}
-
-fn search_starting_digit(line: &str) -> Option<u8> {
-    const DIGITS: [(&str, u8); 9] = [
-        ("one", 1),
-        ("two", 2),
-        ("three", 3),
-        ("four", 4),
-        ("five", 5),
-        ("six", 6),
-        ("seven", 7),
-        ("eight", 8),
-        ("nine", 9),
-    ];
-
-    if line.is_empty() {
+/// Get first and last element of an iterator.
+/// If iterator only has one item, returns first item twice.
+/// 
+/// Returns [`None`] if iterator is empty.
+fn iter_first_last<I: Clone>(mut iter: impl Iterator<Item=I>) -> Option<(I, I)> {
+    let Some(first) = iter.next() else {
         return None
-    }
+    };
 
-    // Search for numerical digit
-    if let Some(digit) = line.chars().nth(0).and_then(|digit| digit.to_digit(10)) {
-        return Some(digit as u8)
-    }
+    let Some(last) = iter.last() else {
+        return Some((first.clone(), first));
+    };
 
-    // Search for written digit
-    for (digit, value) in DIGITS {
-        if line.starts_with(digit) {
-            return Some(value);
-        }
-    }
-
-    None
+    Some((first, last))
 }
 
-fn gold(input: &str) -> u32 {
-    let mut calibration_value: u32 = 0;
+fn solve(input: &str, ac: &AhoCorasick) -> usize {
+    let mut calibration_value: usize = 0;
 
     for line in input.trim().lines() {
-        let mut first: Option<u8> = None;
-        let mut last: Option<u8> = None;
+        let res = iter_first_last(ac.find_overlapping_iter(line));
+        let res = res.map(|pair| {
+            // Convert pattern ID into a numeric value
+            let numeric = (
+                pair.0.pattern().as_usize() % 9 + 1,
+                pair.1.pattern().as_usize() % 9 + 1,
+            );
+            numeric.0*10 + numeric.1
+        }).unwrap();
 
-        for i in 0..line.len() {
-            if let Some(found) = search_starting_digit(&line[i..]) {
-                if first.is_none() {
-                    first = Some(found);
-                }
-
-                last = Some(found);
-            }
-        }
-        
-        let first = first.unwrap() as u32;
-        let last = last.unwrap() as u32;
-
-        let value: u32 = first * 10 + last;
-        calibration_value += value;
+        calibration_value += res;
     }
 
     calibration_value
+}
+
+fn silver(input: &str) -> usize {
+    const DIGITS: [&str; 9] = [
+        "1", "2", "3", "4", "5", "6", "7", "8", "9",
+    ];
+    let ac = AhoCorasick::new(DIGITS).unwrap();
+
+    solve(input, &ac)
+}
+
+fn gold(input: &str) -> usize {
+    const DIGITS: [&str; 18] = [
+        "1", "2", "3", "4", "5", "6", "7", "8", "9", 
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    ];
+    let ac = AhoCorasick::new(DIGITS).unwrap();
+
+    solve(input, &ac)
 }
 
 fn main() -> anyhow::Result<()> {
     let input = read_input()?;
-    let silver = silver(input.as_str());
-    let gold = gold(input.as_str());
 
-    println!("Silver: {}", silver);
-    println!("  Gold: {}", gold);
+    println!("Silver: {}", silver(input.as_str()));
+    println!("  Gold: {}", gold(input.as_str()));
 
     Ok(())
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn written_digit() {
-        assert_eq!(search_starting_digit("twothree"), Some(2));
-    }
-
-    #[test]
-    fn numerical_digit() {
-        assert_eq!(search_starting_digit("91"), Some(9));
-    }
-
-    #[test]
-    fn invalid_digit() {
-        assert_eq!(search_starting_digit("invalid"), None);
-    }
 }
