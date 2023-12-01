@@ -1,7 +1,7 @@
 use advent::read_input;
 
 fn silver(input: &str) -> u32 {
-    let mut calibration_values: Vec<u32> = Vec::new();
+    let mut calibration_value: u32 = 0;
 
     for line in input.trim().lines() {
         let mut first: Option<u8> = None;
@@ -25,15 +25,15 @@ fn silver(input: &str) -> u32 {
             continue;
         }
 
-        let first = first.unwrap();
-        let last = last.unwrap();
+        let first = first.unwrap() as u32;
+        let last = last.unwrap() as u32;
 
         // Rebuild
-        let value: u32 = format!("{}{}", first, last).parse().unwrap();
-        calibration_values.push(value);
+        let value: u32 = first * 10 + last;
+        calibration_value += value;
     }
 
-    calibration_values.iter().sum()
+    calibration_value
 }
 
 fn search_starting_digit(line: &str) -> Option<u8> {
@@ -69,7 +69,7 @@ fn search_starting_digit(line: &str) -> Option<u8> {
 }
 
 fn gold(input: &str) -> u32 {
-    let mut calibration_values: Vec<u32> = Vec::new();
+    let mut calibration_value: u32 = 0;
 
     for line in input.trim().lines() {
         let mut first: Option<u8> = None;
@@ -85,15 +85,14 @@ fn gold(input: &str) -> u32 {
             }
         }
         
-        let first = first.unwrap();
-        let last = last.unwrap();
+        let first = first.unwrap() as u32;
+        let last = last.unwrap() as u32;
 
-        // Rebuild
-        let value: u32 = format!("{}{}", first, last).parse().unwrap();
-        calibration_values.push(value);
+        let value: u32 = first * 10 + last;
+        calibration_value += value;
     }
 
-    calibration_values.iter().sum()
+    calibration_value
 }
 
 fn main() -> anyhow::Result<()> {
