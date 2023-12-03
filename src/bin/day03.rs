@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use grid::Grid;
 
 use advent::read_input;
@@ -75,9 +77,14 @@ fn main() -> anyhow::Result<()> {
     ];
 
 
-    let mut sum: usize = 0;
+    let mut silver_sum: usize = 0;
+
     let mut number = Number::new();
+    // Number we we're building was connected to a symbol
     let mut was_connected = false;
+    // Seen gears
+    let mut gears: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
+    let mut last_gear: Option<(usize, usize)> = None;
 
     for x in 0..cols {
         for y in 0..rows {
@@ -88,8 +95,14 @@ fn main() -> anyhow::Result<()> {
                 if was_connected {
                     let num = number.take().unwrap();
                     println!("constructed: {}", num);
-                    sum += num;
+                    if let Some(gear) = last_gear {
+                        println!("{} is connected to gear {:?}", num, gear);   
+                        let gear = gears.entry(gear).or_default();
+                        gear.push(num);
+                    }
+                    silver_sum += num;
                     was_connected = false;
+                    last_gear = None;
                 } else {
                     number.clear()
                 }
@@ -119,13 +132,25 @@ fn main() -> anyhow::Result<()> {
                 if !s.is_ascii_digit() && s as char != '.' {
                     println!("connected symbol: {} -> {}", c as char, s as char);
                     was_connected = true;
+
+                    if s as char == '*' {
+                        last_gear = Some((nx, ny));
+                    } else {
+                        last_gear = None;
+                    }
                 }
             }
         }
         print!("\n")
     }
 
-    println!("Silver: {}", sum);
+    let gold_sum: usize = gears.values()
+        .filter(|&numbers| numbers.len() == 2)
+        .map(|numbers| numbers.iter().product::<usize>())
+        .sum();
+
+    println!("Silver: {}", silver_sum);
+    println!("  Gold: {}", gold_sum);
 
     Ok(())
 }
