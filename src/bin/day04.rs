@@ -10,14 +10,8 @@ struct Card {
 }
 
 impl Card {
-    fn score(&self) -> usize {
-        let matching = self.winning.intersection(&self.have).count();
-        
-        if matching > 0 {
-            2_usize.pow(matching as u32 - 1)
-        } else {
-            0
-        }
+    fn matching(&self) -> usize {
+        self.winning.intersection(&self.have).count()
     }
 }
 
@@ -35,17 +29,49 @@ impl FromStr for Card {
     }
 }
 
+fn score(match_count: usize) -> usize {
+    if match_count > 0 {
+        2_usize.pow(match_count as u32 - 1)
+    } else {
+        0
+    }
+}
+
+fn silver(input: &str) -> usize {
+    input.trim().lines()
+        .map(|line| line
+            .parse()
+            .map(|card: Card| score(card.matching()))
+            .unwrap()
+        ).sum()
+}
+
+fn gold(input: &str) -> usize {
+    let matching = input.trim().lines()
+        .map(|line| line
+            .parse()
+            .map(|card: Card| card.matching())
+            .unwrap()
+        ).collect::<Vec<_>>();
+    
+    let mut card_counts = vec![1_usize; matching.len()];
+    for i in 0..card_counts.len() {
+        let count = card_counts[i];
+
+        // Accumulate extra cards if card has matching numbers
+        for extra_i in 0..matching[i] {
+            card_counts[i+extra_i+1] += count;
+        }
+    }
+
+    card_counts.iter().sum()
+}
+
 fn main() -> anyhow::Result<()> {
     let input = read_input()?;
 
-    let sum: usize = input.trim().lines()
-        .map(|line| line
-            .parse()
-            .map(|card: Card| card.score())
-            .unwrap()
-        ).sum();
-
-    println!("Silver: {}", sum);
+    println!("Silver: {}", silver(&input));
+    println!("  Gold: {}", gold(&input));
 
     Ok(())
 }
@@ -71,12 +97,18 @@ mod tests {
     #[test]
     fn card_win_count() {
         let card: Card = "Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53".parse().unwrap();
-        assert_eq!(card.score(), 8);
+        assert_eq!(card.matching(), 4);
+    }
+
+    #[test]
+    fn card_win_score() {
+        let card: Card = "Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53".parse().unwrap();
+        assert_eq!(score(card.matching()), 8);
     }
 
     #[test]
     fn card_no_win() {
         let card: Card = "Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11".parse().unwrap();
-        assert_eq!(card.score(), 0);
+        assert_eq!(card.matching(), 0);
     }
 }
