@@ -1,6 +1,5 @@
 use advent::read_input;
 use aho_corasick::AhoCorasick;
-use rayon::prelude::*;
 
 /// Get first and last element of an iterator.
 /// If iterator only has one item, returns first item twice.
@@ -18,18 +17,27 @@ fn iter_first_last<I: Clone>(mut iter: impl Iterator<Item=I>) -> Option<(I, I)> 
     Some((first, last))
 }
 
+fn solve_line(line: &str, ac: &AhoCorasick) -> usize {
+    let res = iter_first_last(ac.find_overlapping_iter(line));
+    res.map(|pair| {
+        // Convert pattern ID into a numeric value
+        let numeric = (
+            pair.0.pattern().as_usize() % 9 + 1,
+            pair.1.pattern().as_usize() % 9 + 1,
+        );
+        numeric.0*10 + numeric.1
+    }).unwrap()
+}
+
+#[cfg(feature = "parallel")]
 fn solve(input: &str, ac: &AhoCorasick) -> usize {
-    input.trim().par_lines().map(|line| {
-        let res = iter_first_last(ac.find_overlapping_iter(line));
-        res.map(|pair| {
-            // Convert pattern ID into a numeric value
-            let numeric = (
-                pair.0.pattern().as_usize() % 9 + 1,
-                pair.1.pattern().as_usize() % 9 + 1,
-            );
-            numeric.0*10 + numeric.1
-        }).unwrap()
-    }).sum()
+    use rayon::prelude::*;
+    input.trim().par_lines().map(|line| solve_line(line, ac)).sum()
+}
+
+#[cfg(not(feature = "parallel"))]
+fn solve(input: &str, ac: &AhoCorasick) -> usize {
+    input.trim().lines().map(|line| solve_line(line, ac)).sum()
 }
 
 fn silver(input: &str) -> usize {
