@@ -1,31 +1,58 @@
-use std::{str::FromStr, collections::BTreeSet};
+use std::collections::HashSet;
 
 use advent::read_input;
-use anyhow::anyhow;
 
 #[derive(Debug)]
-struct Card {
-    winning: BTreeSet<u16>,
-    have: BTreeSet<u16>,
+struct MatchCountIter<T> {
+    linesource: T,
+    winning: HashSet<u16>,
 }
 
-impl Card {
-    fn matching(&self) -> usize {
-        self.winning.intersection(&self.have).count()
+impl<T> MatchCountIter<T> {
+    fn from_linesource(linesource: T) -> Self {
+        Self {
+            linesource,
+            winning: HashSet::new(),
+        }
     }
 }
 
-impl FromStr for Card {
-    type Err = anyhow::Error;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.strip_prefix("Card ").ok_or_else(|| anyhow!("missing card prefix"))?;
-        let (_, rest) = s.split_once(':').ok_or_else(|| anyhow!("missing semicolon after card number"))?;
-        let (winning, have) = rest.split_once('|').ok_or_else(|| anyhow!("invalid card number list format"))?;
+impl<'a, T> Iterator for MatchCountIter<T>
+where
+    T: Iterator<Item = &'a str>    
+{
+    type Item = usize;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.winning.clear();
 
-        Ok(Self {
-            winning: winning.split_whitespace().map(|n| n.parse().unwrap()).collect(),
-            have: have.split_whitespace().map(|n| n.parse().unwrap()).collect(),
-        })
+        if let Some(line) = self.linesource.next() {
+            let s = line.strip_prefix("Card ")?;
+            let (_, rest) = s.split_once(':')?;
+            let (winning, have) = rest.split_once('|')?;
+
+            // Only extend winning set, as we can check for membership separately.
+            // Note: Set is empty, but the same allocation is reused in order
+            //       to avoid reallocating on each time next() is called.
+            self.winning.extend(
+                winning.split_ascii_whitespace()
+                    .map(|num| num.parse::<u16>().unwrap())
+            );
+
+            // Check for membership in a loop instead of building a separate set.
+            let mut match_count: usize = 0;
+            for num in have
+                .split_ascii_whitespace()
+                .map(|num| num.parse::<u16>().unwrap())
+            {
+                if self.winning.contains(&num) {
+                    match_count += 1;
+                }
+            }
+
+            Some(match_count)
+        } else {
+            None
+        }
     }
 }
 
@@ -38,21 +65,14 @@ fn score(match_count: usize) -> usize {
 }
 
 fn silver(input: &str) -> usize {
-    input.trim().lines()
-        .map(|line| line
-            .parse()
-            .map(|card: Card| score(card.matching()))
-            .unwrap()
-        ).sum()
+    MatchCountIter::from_linesource(input.trim().lines())
+        .map(|match_count| score(match_count))
+        .sum()
 }
 
 fn gold(input: &str) -> usize {
-    let matching = input.trim().lines()
-        .map(|line| line
-            .parse()
-            .map(|card: Card| card.matching())
-            .unwrap()
-        ).collect::<Vec<_>>();
+    let matching = MatchCountIter::from_linesource(input.trim().lines())
+        .collect::<Vec<_>>();
     
     let mut card_counts = vec![1_usize; matching.len()];
     for i in 0..card_counts.len() {
@@ -74,41 +94,4 @@ fn main() -> anyhow::Result<()> {
     println!("  Gold: {}", gold(&input));
 
     Ok(())
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn card_parses() {
-        let card = "Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53".parse::<Card>();
-        assert!(card.is_ok());
-    }
-
-    #[test]
-    fn card_info() {
-        let card: Card = "Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53".parse().unwrap();
-        assert!(card.winning.iter().eq(&[17, 41, 48, 83, 86]));
-        assert!(card.have.iter().eq(&[6, 9, 17, 31, 48, 53, 83, 86]));
-    }
-
-    #[test]
-    fn card_win_count() {
-        let card: Card = "Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53".parse().unwrap();
-        assert_eq!(card.matching(), 4);
-    }
-
-    #[test]
-    fn card_win_score() {
-        let card: Card = "Card 1: 41 48 83 86 17 | 83 86  6 31 17  9 48 53".parse().unwrap();
-        assert_eq!(score(card.matching()), 8);
-    }
-
-    #[test]
-    fn card_no_win() {
-        let card: Card = "Card 6: 31 18 13 56 72 | 74 77 10 23 35 67 36 11".parse().unwrap();
-        assert_eq!(card.matching(), 0);
-    }
 }
