@@ -1,19 +1,29 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::io::{self, Read};
 
 /// Helper utility for reading advent of code input files.
 pub fn read_input() -> Result<String, io::Error> {
-    let filename = std::env::args().nth(1)
-        .ok_or_else(|| io::Error::new(
-            io::ErrorKind::Other,
-            r#"expected input file path or "-" as first argument"#
-        ))?;
+    let filename = get_filename_from_args()?;
 
     if filename == "-" {
         read_from_stdin()
     } else {
-        read_file(&filename)
+        let resolved = resolve_path(&filename)?;
+        std::fs::read_to_string(resolved)
     }
+}
+
+/// Similar to [`read_input`], but opens the file via memory mapping.
+#[cfg(feature = "mmap")]
+pub fn map_input() -> Result<memmap2::Mmap, io::Error> {
+    use std::fs::File;
+
+    let filename = get_filename_from_args()?;
+    let resolved = resolve_path(&filename)?;
+    let file = File::open(resolved)?;
+
+    let map = unsafe { memmap2::Mmap::map(&file) }?;
+    Ok(map)
 }
 
 /// Read **unbounded** [`String`] from standard input.
@@ -23,20 +33,23 @@ fn read_from_stdin() -> Result<String, io::Error> {
     Ok(buffer)
 }
 
-/// Read file specified by `path`.
-///
-/// `path` can be either absolute path to a file
-/// or a path relative to `inputs/` folder next to the current working directory.
-fn read_file(path: impl AsRef<Path>) -> Result<String, io::Error> {
+fn get_filename_from_args() -> Result<String, io::Error> {
+    std::env::args().nth(1)
+        .ok_or_else(|| io::Error::new(
+            io::ErrorKind::Other,
+            r#"expected input file path or "-" as first argument"#
+        ))
+}
+
+fn resolve_path(path: impl AsRef<Path>) -> Result<PathBuf, io::Error> {
     let path = path.as_ref();
-    let resolved = if path.is_absolute() {
+
+    if path.is_absolute() {
         path.to_path_buf()
     } else {
         let mut base = std::env::current_dir()?;
         base.push("inputs/");
         base.push(path);
         base
-    }.canonicalize()?;
-
-    std::fs::read_to_string(resolved)
+    }.canonicalize()
 }
