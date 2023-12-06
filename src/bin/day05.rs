@@ -3,37 +3,58 @@ use std::{ops::Range, str::FromStr};
 use advent::read_input;
 use anyhow::anyhow;
 
-// 475615938 - too high
-// 115354858 - wrong
-
 #[derive(Debug)]
 struct Map(Vec<MapLine>);
 impl Map {
     /// Translate given ranges.
-    fn translate(&self, seed_ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
-        let mut out: Vec<Range<usize>> = Vec::new();
+    fn translate(&self, mut seed_ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
+        // Stack of translated ranges.
+        // This will become `seed_ranges` for next iteration.
+        let mut out_ranges: Vec<Range<usize>> = Vec::new();
         
-        for seeds in seed_ranges {
+        while let Some(seeds) = seed_ranges.pop() {
+            // println!("--- SEED START ---");
+            
+            // Marker to indicate whether some part of this range was translated.
             let mut was_translated = false;
-            // ASSUMPTION: Map lines never overlap
-            println!("--- SEED START ---");
+
             for translator in &self.0 {
-                if let Some(changed) = translator.try_translate(&seeds) {
-                    // changed contains newly mapped range
-                    // changed can contain multiple ranges, some might be 1-to-1 mapped, others mapped to dst
-                    out.extend(changed);
-                    was_translated = true;
+                if was_translated {
+                    // Seed range was already translated, move on...
                     break;
                 }
+
+                if let Some(changed) = translator.try_translate(&seeds) {
+                    // `changed` now contains at LEAST one range that was
+                    // translated using this translator (indicated in `ready` flag).
+                    //
+                    // Ranges that were split off from the original one (!ready)
+                    // are pushed back to the seed stack for re-checking.
+                    // 
+                    // This process continues until there are no !ready ranges.
+                    for (range, ready) in changed {
+                        if ready {
+                            out_ranges.push(range);
+                            // Some part of the original range was translated!
+                            // Mark this one as handled
+                            was_translated = true;
+                        } else {
+                            // range needs to be rechecked, put back onto the stack.
+                            seed_ranges.push(range)
+                        }
+                    }
+                }
             }
-            // No translator could translate this range, it is passed 1-to-1
+
+            // No translator could translate this range.
+            // Range is passed in 1-to-1.
             if !was_translated {
-                out.push(seeds.clone());
+                out_ranges.push(seeds.clone());
             }
-            println!("--- SEED END   ---\n");
+            // println!("--- SEED END   ---\n");
         }
 
-        out
+        out_ranges
     }
 
     fn from_lines<'a, T>(source: &mut T) -> Option<Self>
@@ -82,9 +103,9 @@ fn adjust_range(range: Range<usize>, offset: isize) -> Range<usize> {
 
 impl MapLine {
     /// Try to translate given range.
-    fn try_translate(&self, seeds: &Range<usize>) -> Option<Vec<Range<usize>>> {
+    fn try_translate(&self, seeds: &Range<usize>) -> Option<Vec<(Range<usize>, bool)>> {
         if seeds.end <= self.src.start || seeds.start >= self.src.end {
-            println!("  1-to-1 seeds: {:?} - range: {:?}", seeds, self.src);
+            // println!("  1-to-1 seeds: {:?} - range: {:?}", seeds, self.src);
             return None
         }
 
@@ -95,40 +116,52 @@ impl MapLine {
         // If seeds are fully contained within the area, we can just map them
         // without splitting the range
         if self.src.start <= seeds.start && self.src.end >= seeds.end {
-            println!("  contained overlap seeds: {:?} - range: {:?}", seeds, self.src);
-            return Some(vec![adjust_range(seeds.clone(), offset)])
+            // println!("  contained overlap seeds: {:?} - range: {:?}", seeds, self.src);
+            return Some(vec![
+                (adjust_range(seeds.clone(), offset), true)
+            ])
         }
 
         // Seeds are larger than the area, needs to be split 3-way
         if seeds.start < self.src.start && seeds.end > self.src.end {
-            println!("  FULLY OUTSIDE seeds: {:?} - range: {:?}:", seeds, self.src);
             let left_outside = seeds.start..self.src.start;
             let inside = self.src.start..self.src.end;
             let right_outside = self.src.end..seeds.end;
+            println!("  FULLY OUTSIDE seeds: {:?} - range: {:?}:", seeds, self.src);
             println!("    inside (map): {:?}, outside (left, pass): {:?}, outside (right, pass): {:?}", inside, left_outside, right_outside);
             // panic!("impossible!");
-            return Some(vec![left_outside, adjust_range(inside, offset), right_outside]);
+            return Some(vec![
+                (left_outside, false),
+                (adjust_range(inside, offset), true),
+                (right_outside, false),
+            ]);
         }
 
         // Partial overlaps, 2-way splits
         // Left side out of the range
         if seeds.end > self.src.start && seeds.start < self.src.start {
-            println!("  LEFT  OUTSIDE seeds: {:?} - range: {:?}:", seeds, self.src);
             let inside = self.src.start..seeds.end;
             let outside = seeds.start..self.src.start;
+            println!("  LEFT  OUTSIDE seeds: {:?} - range: {:?}:", seeds, self.src);
             println!("    inside (map): {:?}, outside (pass): {:?}", inside, outside);
 
-            return Some(vec![adjust_range(inside, offset), outside]);
+            return Some(vec![
+                (adjust_range(inside, offset), true),
+                (outside, false)
+            ]);
         }
 
         // Right side out of the range
         if seeds.start < self.src.end && seeds.end > self.src.end {
-            println!("  RIGHT OUTSIDE seeds: {:?} - range: {:?}:", seeds, self.src);
             let outside = self.src.end..seeds.end;
             let inside = seeds.start..self.src.end;
+            println!("  RIGHT OUTSIDE seeds: {:?} - range: {:?}:", seeds, self.src);
             println!("    inside (map): {:?}, outside (pass): {:?}", inside, outside);
 
-            return Some(vec![adjust_range(inside, offset), outside]);
+            return Some(vec![
+                (adjust_range(inside, offset), true),
+                (outside, false)
+            ]);
         }
 
         println!("!!!! unhandled overlap seeds: {:?} - range: {:?} !!!!", seeds, self.src);
@@ -142,7 +175,6 @@ fn solve(seeds: Seeds, maps: &[Map]) -> usize {
     let pre_total = seeds.0.iter().fold(0, |acc, range| acc + range.len()) as isize;
     // println!("pre total seeds:    {}", pre_total);
 
-    // let mut seeds = HashSet::from_iter(seeds.0);
     let mut seeds = seeds.0;
     for map in maps {
         seeds = map.translate(seeds);
@@ -150,8 +182,8 @@ fn solve(seeds: Seeds, maps: &[Map]) -> usize {
         println!("seeds after map: {:?} (count: {count}\n\n\n", &seeds);
     }
 
-    let post_total = seeds.iter().fold(0, |acc, range| acc + range.len()) as isize;
 
+    let post_total = seeds.iter().fold(0, |acc, range| acc + range.len()) as isize;
     if pre_total != post_total {
         panic!("unexpected amount of seeds!, expected {pre_total} got {post_total} (diff: {})", post_total - pre_total);
     }
@@ -173,7 +205,7 @@ fn main() -> anyhow::Result<()> {
         maps.push(map)
     }
 
-    // println!("Silver: {}", solve(silver_seeds, &maps));
+    println!("Silver: {}", solve(silver_seeds, &maps));
     println!("  Gold: {}", solve(gold_seeds, &maps));
 
     Ok(())
