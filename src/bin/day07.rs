@@ -4,7 +4,7 @@ use advent::read_input;
 use anyhow::anyhow;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum WinType {
+enum Win {
     FiveOfAKind = 0,
     FourOfAKind,
     FullHouse,
@@ -45,7 +45,7 @@ impl PartialOrd for Hand {
 }
 
 impl Hand {
-    fn wintype(&self) -> WinType {
+    fn wintype(&self) -> Win {
         let mut counts = [0_u8; 14];
         for &c in &self.cards {
             counts[c as usize - 1] += 1;
@@ -57,35 +57,28 @@ impl Hand {
         // Prerequisites
         // - Largest count of same number
         // - Number of pairs
-        let max_same = counts.iter().max().unwrap();
+        // - Number of jokers
+        let max_same = *counts.iter().max().unwrap();
         let pairs = counts.iter().filter(|&&count| count == 2).count();
 
         return match (max_same, jokers) {
-            (0, 5) => WinType::FiveOfAKind, // JJJJJ -> AAAAA
-            (5, 0) => WinType::FiveOfAKind, // AAAAA
-            (1, 4) => WinType::FiveOfAKind, // AJJJJ -> AAAAA
-            (4, 1) => WinType::FiveOfAKind, // AAAAJ -> AAAAA
-            (3, 2) => WinType::FiveOfAKind, // AAAJJ -> AAAAA
-            (2, 3) => WinType::FiveOfAKind, // AAJJJ -> AAAAA
+            // Check if we have N-of-a-kind using cards+jokers
+            fives @ (0..=5, _) if fives.0 + jokers == 5 => Win::FiveOfAKind,
+            fours @ (0..=4, _) if fours.0 + jokers == 4 => Win::FourOfAKind,
 
-            (1, 3) => WinType::FourOfAKind, // AJJJB -> AAAAB
-            (4, 0) => WinType::FourOfAKind, // AAAAB
-            (3, 1) => WinType::FourOfAKind, // AAAJB -> AAAAB
-            (2, 2) => WinType::FourOfAKind, // AAJJB -> AAAAB
+            // Full House special cases; Joker can form an extra pair
+            (2, 1) if pairs == 2 => Win::FullHouse, // AABBJ -> AABBB
+            (3, 0) if pairs == 1 => Win::FullHouse, // AAABB
 
-            (3, 0) if pairs == 1 => WinType::FullHouse, // AAABB
-            (2, 1) if pairs == 2 => WinType::FullHouse, // AABBJ -> AABBB
+            threes @ (1..=3, _) if threes.0 + jokers == 3 => Win::ThreeOfKind,
 
-            (3, 0) => WinType::ThreeOfKind, // AAABC
-            (2, 1) => WinType::ThreeOfKind, // AAJBC -> AAABC
-            (1, 2) => WinType::ThreeOfKind, // AJJBC -> AAABC
+            // Special case for two pairs
+            (2, 0) if pairs == 2 => Win::TwoPair, // AABBC
 
-            (2, 0) if pairs == 2 => WinType::TwoPair, // AABBC
+            twos @ (1..=2, _) if twos.0 + jokers == 2 => Win::OnePair,
 
-            (2, 0) => WinType::OnePair, // AABCD
-            (1, 1) => WinType::OnePair, // AJCDE -> AACDE
-
-            (1, 0) => WinType::HighCard, // ABCDE
+            // Everything else
+            (1, 0) => Win::HighCard, // ABCDE
             _      => unreachable!(),
         }
     }
