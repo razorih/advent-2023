@@ -25,11 +25,11 @@ fn extrapolate(values: &[isize]) -> isize {
     println!("diff {:?}", diff);
     if let Some(common) = all_elements_equal(diff.as_slice()) {
         println!("common element: {common}");
-        return values[values.len() - 1] + *common;
+        return values[0] - *common;
     } else {
         // Need to recurse
         let next = extrapolate(diff.as_slice());
-        return values[values.len() - 1] + next;
+        return values[0] - next;
     }
 }
 
@@ -48,7 +48,7 @@ fn main() -> anyhow::Result<()> {
         silver_sum += extrapolated;
         println!("new: {extrapolated}\n")
     }
-    println!("Silver: {}", silver_sum);
+    println!("Gold: {}", silver_sum);
 
     Ok(())
 }
