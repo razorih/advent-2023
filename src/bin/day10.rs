@@ -29,8 +29,6 @@ fn parse(maze: &str) -> (Grid<Tile>, (usize, usize)) {
     }
 
     let mut grid = Grid::from_vec(everything, cols);
-
-    // Resolve starting tile
     grid[start] = resolve_unknown_tile(&grid, start);
 
     (grid, start)
@@ -144,17 +142,42 @@ fn solve(maze: &Grid<Tile>, start: (usize, usize)) -> Vec<(usize, usize)> {
     steps
 }
 
+/// Calculate signed area of a polygon given its vertices.
+fn shoelace(vertices: &[(usize, usize)]) -> isize {
+    /// Calculates determinant of 2x2 matrix
+    /// | a  b |
+    /// | c  d |
+    fn det((a, b): (usize, usize), (c, d): (usize, usize)) -> isize {
+        a as isize * d as isize - b as isize * c as isize
+    }
+
+    let mut incomplete_sum: isize = 0;
+    for pair in vertices.windows(2) {
+        incomplete_sum += det(pair[0], pair[1]);
+    }
+
+    let complete_sum = incomplete_sum + det(vertices[vertices.len() - 1], vertices[0]);
+    complete_sum / 2
+}
+
+/// Calculate number of interior points using Pick's theorem.
+/// Area MUST have been derived from a polygon with discrete vertex coordinates.
+fn n_interior_points(area: isize, n_boundary_points: isize) -> isize {
+    area.abs() - (n_boundary_points / 2) + 1
+}
+
 fn main() -> anyhow::Result<()> {
     let input = read_input()?;
     let (maze, start) = parse(&input);
-    println!("start: {:?}", start);
 
     let path = solve(&maze, start);
+    let area = shoelace(&path);
 
     print(&maze, &HashSet::from_iter(path.iter().cloned()));
 
-    // Distance to furthest point is circumference / 2
+    // Distance to furthest point along the edge is edge length / 2
     println!("Silver: {}", path.len() / 2);
+    println!("Gold:   {}", n_interior_points(area, path.len() as isize));
 
     Ok(())
 }
@@ -173,12 +196,12 @@ fn print(maze: &Grid<Tile>, path: &HashSet<(usize, usize)>) {
     for (i, row) in maze.iter_rows().enumerate() {
         for (j, c) in row.enumerate() {
             if path.contains(&(i, j)) {
-                let _ = write!(lock, "{GREEN}{}{RESET}", c);
+                let _ = write!(lock, "{GREEN}{}", c);
             } else {
-                let _ = write!(lock, "{RED}{}{RESET}", c);
+                let _ = write!(lock, "{RED}{}", c);
             }
         }
-        let _ = writeln!(lock);
+        let _ = writeln!(lock, "{RESET}");
     }
 }
 
