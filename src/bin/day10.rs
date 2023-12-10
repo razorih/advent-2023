@@ -144,11 +144,11 @@ fn solve(maze: &Grid<Tile>, start: (usize, usize)) -> Vec<(usize, usize)> {
 
 /// Calculate signed area of a polygon given its vertices.
 fn shoelace(vertices: &[(usize, usize)]) -> isize {
-    /// Calculates determinant of 2x2 matrix
-    /// | a  b |
-    /// | c  d |
-    fn det((a, b): (usize, usize), (c, d): (usize, usize)) -> isize {
-        a as isize * d as isize - b as isize * c as isize
+    /// Calculates determinant of 2x2 matrix formed from two points
+    /// | x1  x2 |
+    /// | y1  y2 |
+    fn det((x1, y1): (usize, usize), (x2, y2): (usize, usize)) -> isize {
+        x1 as isize * y2 as isize - x2 as isize * y1 as isize
     }
 
     let mut incomplete_sum: isize = 0;
