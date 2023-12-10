@@ -1,4 +1,4 @@
-use std::fmt::{Display, Debug, Write};
+use std::{fmt::{Display, Debug, Write}, collections::HashSet};
 
 use advent::read_input;
 use grid::Grid;
@@ -110,45 +110,33 @@ fn get_possible_coords(maze: &Grid<Tile>, pos: (usize, usize)) -> [(usize, usize
     }
 }
 
-fn solve(maze: &Grid<Tile>, start: (usize, usize)) -> usize {
-    // Two cursors, going different directions
-    // When two meet, we've reached point furthest away from the start
+fn solve(maze: &Grid<Tile>, start: (usize, usize)) -> Vec<(usize, usize)> {
     let first_next = get_possible_coords(maze, start);
+    let mut cursor = first_next[0];
 
-    let mut forwards = first_next[0];
-    let mut backwards = first_next[1];
-    // Coordinates we came from so we don't backtrack
-    let mut last_forward = start;
-    let mut last_backward = start;
+    // Coordinate we came from so we don't backtrack
+    let mut last_cursor = start;
 
-    // First step has already been taken
-    let mut steps: usize = 1;
+    // Keep a list of coordinates we stepped on,
+    // this will form a list of all points along the shape's edge
+    let mut steps = vec![start];
 
     loop {
-        let forwards_next = get_possible_coords(maze, forwards);
-        let backwards_next = get_possible_coords(maze, backwards);
+        let cursor_candidates = get_possible_coords(maze, cursor);
 
-        // Make sure we don't backtrack
-        if forwards_next[0] == last_forward {
-            last_forward = forwards;
-            forwards = forwards_next[1];
+        // Decide next position, taking care we don't backtrack
+        let next_cursor = if cursor_candidates[0] == last_cursor {
+            cursor_candidates[1]
         } else {
-            last_forward = forwards;
-            forwards = forwards_next[0];
-        }
+            cursor_candidates[0]
+        };
 
-        if backwards_next[0] == last_backward {
-            last_backward = backwards;
-            backwards = backwards_next[1];
-        } else {
-            last_backward = backwards;
-            backwards = backwards_next[0];
-        }
+        last_cursor = cursor;
+        steps.push(cursor);
+        cursor = next_cursor;
 
-        steps += 1;
-
-        // Advance until we meet
-        if forwards == backwards {
+        // Advance until we loop back to start
+        if cursor == start {
             break;
         }
     }
@@ -159,25 +147,36 @@ fn solve(maze: &Grid<Tile>, start: (usize, usize)) -> usize {
 fn main() -> anyhow::Result<()> {
     let input = read_input()?;
     let (maze, start) = parse(&input);
-    print(&maze);
     println!("start: {:?}", start);
 
-    let silver_dist = solve(&maze, start);
-    println!("Silver: {}", silver_dist);
+    let path = solve(&maze, start);
+
+    print(&maze, &HashSet::from_iter(path.iter().cloned()));
+
+    // Distance to furthest point is circumference / 2
+    println!("Silver: {}", path.len() / 2);
 
     Ok(())
 }
 
-fn print(maze: &Grid<Tile>) {
+fn print(maze: &Grid<Tile>, path: &HashSet<(usize, usize)>) {
+    const RED: &str = "\x1B[31m";
+    const GREEN: &str = "\x1B[32m";
+    const RESET: &str = "\x1B[0m";
+
     use std::io::Write;
 
     // We'll be printing a single char at a time,
     // so take stdout for the whole duration.
     let mut lock = std::io::stdout().lock();
 
-    for row in maze.iter_rows() {
-        for c in row {
-            let _ = write!(lock, "{}", c);
+    for (i, row) in maze.iter_rows().enumerate() {
+        for (j, c) in row.enumerate() {
+            if path.contains(&(i, j)) {
+                let _ = write!(lock, "{GREEN}{}{RESET}", c);
+            } else {
+                let _ = write!(lock, "{RED}{}{RESET}", c);
+            }
         }
         let _ = writeln!(lock);
     }
