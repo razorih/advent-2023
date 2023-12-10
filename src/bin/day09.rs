@@ -17,24 +17,23 @@ where
     }
 }
 
-/// Calculate extrapolated value for given slice
+/// Calculate extrapolated value for given slice recursively.
 fn extrapolate(values: &[isize]) -> isize {
-    println!("values: {:?}", values);
-    let diff: Vec<isize> = values.windows(2).map(|pair| pair[1] - pair[0]).collect();
+    let diff: Vec<isize> = values.windows(2)
+        .map(|pair| pair[1] - pair[0]).collect();
 
-    println!("diff {:?}", diff);
+    // Base case where all elements in derivative are equal
     if let Some(common) = all_elements_equal(diff.as_slice()) {
-        println!("common element: {common}");
         return values[0] - *common;
-    } else {
-        // Need to recurse
-        let next = extrapolate(diff.as_slice());
-        return values[0] - next;
     }
+
+    // Need to recurse
+    let next = extrapolate(diff.as_slice());
+    values[0] - next 
 }
 
 fn parse(line: &str) -> Vec<isize> {
-    line.split_whitespace().map(|num| num.parse().unwrap()).collect()
+    line.split_ascii_whitespace().map(|num| num.parse().unwrap()).collect()
 }
 
 fn main() -> anyhow::Result<()> {
@@ -46,7 +45,7 @@ fn main() -> anyhow::Result<()> {
         let line = parse(line);
         let extrapolated = extrapolate(&line);
         silver_sum += extrapolated;
-        println!("new: {extrapolated}\n")
+        println!("new: {extrapolated}\n");
     }
     println!("Gold: {}", silver_sum);
 
