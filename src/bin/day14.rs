@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use advent::read_input;
 use grid::Grid;
 
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Tile { Empty, Round, Cube }
 
@@ -77,29 +76,27 @@ impl Puzzle {
     fn tick(&mut self, direction: Direction) -> usize {
         let mut tiles_moved = 0;
 
-        for ((row, col), &tile) in self.puzzle_main.indexed_iter() {
-            if tile == Tile::Round {
-                // Look north for some space
-                let Some((next_row, next_col)) = next_position((row, col), direction) else {
-                    continue; // Out of bounds, continue
-                };
-                
-                match self.puzzle_main.get(next_row, next_col) {
-                    Some(Tile::Empty) => {
-                        // SAFETY: `temp` is a clone of `main`, and thus has the same bounds as `main`.
-                        // Nothing in this function changes those bounds.
-                        // `main` (and `temp`) element access is valid for (row, col) and (next_row, next_col).
-                        unsafe {
-                            swap(
-                                &mut self.puzzle_temp,
-                                (row, col),
-                                (next_row, next_col)
-                            )
-                        };
-                        tiles_moved += 1;
-                    },
-                    _ => continue, // May be out-of-bounds or blockage
-                }
+        for ((row, col), _) in self.puzzle_main.indexed_iter().filter(|(_, tile)| **tile == Tile::Round) {
+            // Look north for some space
+            let Some((next_row, next_col)) = next_position((row, col), direction) else {
+                continue; // Out of bounds, continue
+            };
+            
+            match self.puzzle_main.get(next_row, next_col) {
+                Some(Tile::Empty) => {
+                    // SAFETY: `temp` is a clone of `main`, and thus has the same bounds as `main`.
+                    // Nothing in this function changes those bounds.
+                    // `main` (and `temp`) element access is valid for (row, col) and (next_row, next_col).
+                    unsafe {
+                        swap(
+                            &mut self.puzzle_temp,
+                            (row, col),
+                            (next_row, next_col)
+                        )
+                    };
+                    tiles_moved += 1;
+                },
+                _ => continue, // May be out-of-bounds or blockage
             }
         }
 
