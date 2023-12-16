@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
+use std::fmt::{Display, Debug};
 
 use grid::Grid;
 
@@ -56,10 +57,9 @@ fn resolve_path(path: impl AsRef<Path>) -> Result<PathBuf, io::Error> {
     }.canonicalize()
 }
 
-pub fn print_grid<T: std::fmt::Display>(grid: &Grid<T>) {
-    use std::io::Write;
-
+pub fn print_grid<T: Display>(grid: &Grid<T>) {
     let mut lock = std::io::stdout().lock();
+
     for row in grid.iter_rows() {
         for tile in row {
             write!(lock, "{tile}").unwrap();
@@ -69,3 +69,14 @@ pub fn print_grid<T: std::fmt::Display>(grid: &Grid<T>) {
     writeln!(lock).unwrap();
 }
 
+pub fn print_grid_debug<T: Debug>(grid: &Grid<T>) {
+    let mut lock = std::io::stdout().lock();
+
+    for row in grid.iter_rows() {
+        for tile in row {
+            write!(lock, "{tile:?}").unwrap();
+        }
+        writeln!(lock).unwrap();
+    }
+    writeln!(lock).unwrap();
+}
