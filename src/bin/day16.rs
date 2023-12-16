@@ -19,10 +19,8 @@ enum Dir { Up, Down, Left, Right, }
 enum Collision<'a> {
     /// Beam hit grid edge and dies out
     Death,
-    /// Beam continues unchanged
+    /// Beam continues unchanged or reflected
     Continue(Beam<'a>),
-    /// Beam is reflected by a mirror.
-    Reflection(Beam<'a>),
     /// Beam is split into two beams.
     Split(Beam<'a>, Beam<'a>),
 }
@@ -38,7 +36,7 @@ struct Beam<'a> {
 impl<'a> Beam<'a> {
     /// Creates a new beam at some position inside a grid.
     /// 
-    /// Panic if location is out of grid bounds.
+    /// Panics if location is out of grid bounds.
     fn new_in_grid(
         col: usize,
         row: usize,
@@ -57,7 +55,7 @@ impl<'a> Beam<'a> {
         self.grid[(self.row, self.col)]
     }
 
-    /// Consumes the beam and tries to move it to given direction.
+    /// Consumes the beam and moves it to given direction.
     ///
     /// Returns [`None`] if beam goes out of grid bounds.
     fn moved_to_direction(self, direction: Dir) -> Option<Self> {
@@ -89,8 +87,14 @@ impl<'a> Beam<'a> {
     /// 
     /// Returned [`Collision`] object contains beam's next state, if any.
     fn collide(self) -> Collision<'a> {
-        // We're "inside" a mirror
         match self.tile() {
+            Tile::Empty => {
+                if let Some(beam) = self.moved_to_direction(self.direction) {
+                    Collision::Continue(beam)
+                } else {
+                    Collision::Death
+                }
+            },
             Tile::ForwardMirror => { // '/'
                 let next_direction = match self.direction {
                     Dir::Up    => Dir::Right,
@@ -100,7 +104,7 @@ impl<'a> Beam<'a> {
                 };
 
                 if let Some(reflected_beam) = self.moved_to_direction(next_direction) {
-                    Collision::Reflection(reflected_beam)
+                    Collision::Continue(reflected_beam)
                 } else {
                     Collision::Death
                 }
@@ -114,7 +118,7 @@ impl<'a> Beam<'a> {
                 };
 
                 if let Some(reflected_beam) = self.moved_to_direction(next_direction) {
-                    Collision::Reflection(reflected_beam)
+                    Collision::Continue(reflected_beam)
                 } else {
                     Collision::Death
                 }
@@ -133,8 +137,8 @@ impl<'a> Beam<'a> {
                         let down = self.moved_to_direction(Dir::Down);
 
                         match (up, down) {
-                            (None, Some(beam)) => Collision::Reflection(beam),
-                            (Some(beam), None) => Collision::Reflection(beam),
+                            (None, Some(beam)) => Collision::Continue(beam),
+                            (Some(beam), None) => Collision::Continue(beam),
                             (Some(up), Some(down)) => Collision::Split(up, down),
                             (None, None) => Collision::Death,
                         }
@@ -155,19 +159,12 @@ impl<'a> Beam<'a> {
                         let right = self.moved_to_direction(Dir::Right);
 
                         match (left, right) {
-                            (None, Some(beam)) => Collision::Reflection(beam),
-                            (Some(beam), None) => Collision::Reflection(beam),
+                            (None, Some(beam)) => Collision::Continue(beam),
+                            (Some(beam), None) => Collision::Continue(beam),
                             (Some(left), Some(right)) => Collision::Split(left, right),
                             (None, None) => Collision::Death,
                         }
                     }
-                }
-            },
-            Tile::Empty => {
-                if let Some(beam) = self.moved_to_direction(self.direction) {
-                    Collision::Continue(beam)
-                } else {
-                    Collision::Death
                 }
             },
         }
@@ -175,40 +172,28 @@ impl<'a> Beam<'a> {
 }
 
 fn solve(start: Beam) -> usize {
-    // List of beams, a new beam gets added each time a splitter is encountered.
-    // Beams may also "die out" if they hit grid edges
-    let mut beams: VecDeque<Beam> = vec![start.clone()].into();
-    // Set of seen (energized) tiles. As each tile can be energized only once,
-    // but beams can collide with some tiles multiple times
-    // we can't keep a simple running number but need to record each unique tiles.
-    let mut seen: HashSet<(usize, usize, Dir)> = HashSet::new();
-    seen.insert(start.position());
+    // Set of seen (energized) tiles and what direction we have traversed them.
+    let mut seen: HashSet<(usize, usize, Dir)> = HashSet::from([start.position()]);
+    // Queue of beams to be handled
+    let mut beams: VecDeque<Beam> = vec![start].into();
 
     while let Some(beam) = beams.pop_front() {
         match beam.collide() {
+            Collision::Death => {},
             Collision::Continue(beam) => {
-                seen.insert(beam.position());
-                beams.push_back(beam);
-            },
-            Collision::Reflection(beam) => {
-                seen.insert(beam.position());
-                beams.push_back(beam);
+                // Check if we are in a loop
+                if seen.insert(beam.position()) {
+                    beams.push_back(beam);
+                }
             },
             Collision::Split(first, second) => {
-                // Check if we are going to loop
-                // i.e. we are revisiting a point from same angle
-                if !seen.contains(&first.position()) {
-                    seen.insert(first.position());
+                if seen.insert(first.position()) {
                     beams.push_back(first);
                 }
 
-                if !seen.contains(&second.position()) {
-                    seen.insert(second.position());
+                if seen.insert(second.position()) {
                     beams.push_back(second);
                 }
-            },
-            Collision::Death => {
-                // println!("beam died!");
             },
         }
     }
