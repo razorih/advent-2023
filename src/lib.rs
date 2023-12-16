@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::io::{self, Read};
 
+use grid::Grid;
+
 /// Helper utility for reading advent of code input files.
 pub fn read_input() -> Result<String, io::Error> {
     let filename = get_filename_from_args()?;
@@ -53,3 +55,17 @@ fn resolve_path(path: impl AsRef<Path>) -> Result<PathBuf, io::Error> {
         base
     }.canonicalize()
 }
+
+pub fn print_grid<T: std::fmt::Display>(grid: &Grid<T>) {
+    use std::io::Write;
+
+    let mut lock = std::io::stdout().lock();
+    for row in grid.iter_rows() {
+        for tile in row {
+            write!(lock, "{tile}").unwrap();
+        }
+        writeln!(lock).unwrap();
+    }
+    writeln!(lock).unwrap();
+}
+
