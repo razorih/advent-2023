@@ -1,6 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 
-use advent::{read_input, print_grid};
+use advent::read_input;
 use grid::Grid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,7 +223,6 @@ fn solve(mirrors: &Grid<Tile>, start: Beam) -> usize {
                         beams.push_back(second);
                     }
                 }
-
             },
             Collision::Death => {
                 // println!("beam died!");
@@ -231,10 +230,46 @@ fn solve(mirrors: &Grid<Tile>, start: Beam) -> usize {
         }
     }
 
-    print_energized(&seen, (10, 10)).unwrap();
     seen.into_iter().map(|(col, row, _)| (col, row)).collect::<HashSet<(usize, usize)>>().len()
 }
 
+fn gold(puzzle: &Grid<Tile>) -> usize {
+    let (rows, cols) = puzzle.size();
+    let mut max: usize = 0;
+
+    for col in 0..cols {
+        let downwards_beam = Beam::new(col, 0, Dir::Down);
+        let upwards_beam = Beam::new(col, rows-1, Dir::Up);
+
+        let tiles = solve(&puzzle, downwards_beam);
+        if tiles > max {
+            max = tiles;
+        }
+
+        let tiles = solve(&puzzle, upwards_beam);
+        if tiles > max {
+            max = tiles;
+        }
+    }
+
+    for row in 0..rows {
+        let rightward_beam = Beam::new(0, row, Dir::Right);
+        let leftward_beam = Beam::new(cols-1, row, Dir::Left);
+
+        let tiles = solve(&puzzle, rightward_beam);
+        if tiles > max {
+            max = tiles;
+        }
+        let tiles = solve(&puzzle, leftward_beam);
+        if tiles > max {
+            max = tiles;
+        }
+    }
+
+
+
+    max
+}
 
 fn main() -> anyhow::Result<()> {
     let input = read_input()?;
@@ -244,7 +279,8 @@ fn main() -> anyhow::Result<()> {
     let energized_tiles = solve(&puzzle, Beam::new(0, 0, Dir::Right));
     println!("Silver: {}", energized_tiles);
 
-    
+    let maxed = gold(&puzzle);
+    println!("  Gold: {}", maxed);
 
     Ok(())
 }
