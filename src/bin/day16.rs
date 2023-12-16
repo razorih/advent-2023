@@ -5,123 +5,116 @@ use grid::Grid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tile {
-    Empty, // .
-    ForwardMirror, // /
-    BackwardMirror, // \
-    VertSplit, // |
-    HorSplit,  // -
-}
-impl Tile {
-    fn from_char(tile: char) -> Tile {
-        match tile {
-            '.' => Self::Empty,
-            '/' => Self::ForwardMirror,
-            '\\' => Self::BackwardMirror,
-            '|' => Self::VertSplit,
-            '-' => Self::HorSplit,
-            _ => panic!("invalid tile '0x{:x}'", tile as u32),
-        }
-    }
+    Empty,
+    ForwardMirror,
+    BackwardMirror,
+    VertSplit,
+    HorSplit,
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
-enum Dir {
-    Up,
-    Down,
-    Left,
-    #[default]
-    Right, // "beam starts moving right"
-}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum Dir { Up, Down, Left, Right, }
 
-/// Represents a collision between a [`Beam`] and some grid on tiles.
-enum Collision {
+/// Represents a collision between a [`Beam`] and grid tile
+enum Collision<'a> {
     /// Beam hit grid edge and dies out
     Death,
     /// Beam continues unchanged
-    Continue(Beam),
+    Continue(Beam<'a>),
     /// Beam is reflected by a mirror.
-    Reflection(Beam),
+    Reflection(Beam<'a>),
     /// Beam is split into two beams.
-    Split(Beam, Beam),
+    Split(Beam<'a>, Beam<'a>),
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-struct Beam {
+#[derive(Debug, Clone, Copy)]
+struct Beam<'a> {
     col: usize,
     row: usize,
     direction: Dir,
+    grid: &'a Grid<Tile>
 }
 
-impl Beam {
-    fn new(col: usize, row: usize, direction: Dir) -> Self {
-        Self { col, row, direction }
+impl<'a> Beam<'a> {
+    /// Creates a new beam at some position inside a grid.
+    /// 
+    /// Panic if location is out of grid bounds.
+    fn new_in_grid(
+        col: usize,
+        row: usize,
+        direction: Dir,
+        grid: &'a Grid<Tile>
+    ) -> Self {
+        if col >= grid.cols() || row >= grid.rows() {
+            panic!("initial beam position is outside of grid boundaries");
+        }
+
+        Self { col, row, direction, grid }
     }
 
+    /// Get the tile beam is currently on
+    fn tile(&self) -> Tile {
+        self.grid[(self.row, self.col)]
+    }
+
+    /// Consumes the beam and tries to move it to given direction.
+    ///
+    /// Returns [`None`] if beam goes out of grid bounds.
+    fn moved_to_direction(self, direction: Dir) -> Option<Self> {
+        let (col, row) = match direction {
+            Dir::Up    => (self.col, self.row.checked_sub(1)?),
+            Dir::Down  => (self.col, self.row + 1),
+            Dir::Left  => (self.col.checked_sub(1)?, self.row),
+            Dir::Right => (self.col + 1, self.row),
+        };
+
+        if col >= self.grid.cols() || row >= self.grid.rows() {
+            return None
+        }
+
+        Some(Self { col, row, direction, grid: self.grid })
+    }
+
+    /// Copies current beam and moves it to some direction.
+    fn copied_to_direction(&self, direction: Dir) -> Option<Self> {
+        self.clone().moved_to_direction(direction)
+    }
+
+    /// Get beam's current position and direction
     fn position(&self) -> (usize, usize, Dir) {
         (self.col, self.row, self.direction)
     }
 
-    /// Calculates beam's position next tick along current direction.
-    /// Returns [`None`] if beam goes out of bounds (below 0).
+    /// Collides beam with a tile in its current position.
     /// 
-    /// **Note**: Doesn't check some grid's bounds.
-    fn next_position(&self) -> Option<(usize, usize)> {
-        Some(match self.direction {
-            Dir::Up    => (self.col, self.row.checked_sub(1)?),
-            Dir::Left  => (self.col.checked_sub(1)?, self.row),
-            Dir::Down  => (self.col, self.row + 1),
-            Dir::Right => (self.col + 1, self.row),
-        })
-    }
-
-    /// Moves beam one tick forward and handles necessary collisions
-    fn collide_with(self, map: &Grid<Tile>) -> Collision {
-        let Some(&tile) = map.get(self.row, self.col) else {
-            // Beam has gone out of upper bounds and dies
-            return Collision::Death
-        };
-
-        if tile == Tile::Empty {
-            // We are currently on empty tile. Simply move along the current direction
-            return match self.next_position() {
-                Some((next_col, next_row)) =>
-                    Collision::Continue(
-                        Beam::new(next_col, next_row, self.direction)
-                    ),
-                None => Collision::Death,
-            }
-        }
-
+    /// Returned [`Collision`] object contains beam's next state, if any.
+    fn collide(self) -> Collision<'a> {
         // We're "inside" a mirror
-        match tile {
+        match self.tile() {
             Tile::ForwardMirror => { // '/'
-                let next_pos = match self.direction {
-                    Dir::Up    => Some((self.col + 1, self.row, Dir::Right)),
-                    Dir::Down  => self.col.checked_sub(1).map(|col| (col, self.row, Dir::Left)),
-                    Dir::Left  => Some((self.col, self.row + 1, Dir::Down)),
-                    Dir::Right => self.row.checked_sub(1).map(|row| (self.col, row, Dir::Up)),
+                let next_direction = match self.direction {
+                    Dir::Up    => Dir::Right,
+                    Dir::Down  => Dir::Left,
+                    Dir::Left  => Dir::Down,
+                    Dir::Right => Dir::Up,
                 };
 
-                if let Some((next_col, next_row, next_direction)) = next_pos {
-                    Collision::Reflection(
-                        Beam::new(next_col, next_row, next_direction)
-                    )
+                if let Some(reflected_beam) = self.moved_to_direction(next_direction) {
+                    Collision::Reflection(reflected_beam)
                 } else {
                     Collision::Death
                 }
             },
             Tile::BackwardMirror => { // '\'
-                let next_pos = match self.direction {
-                    Dir::Up    => self.col.checked_sub(1).map(|col| (col, self.row, Dir::Left)),
-                    Dir::Down  => Some((self.col + 1, self.row, Dir::Right)),
-                    Dir::Left  => self.row.checked_sub(1).map(|row| (self.col, row, Dir::Up)),
-                    Dir::Right => Some((self.col, self.row + 1, Dir::Down)),
+                let next_direction = match self.direction {
+                    Dir::Up    => Dir::Left,
+                    Dir::Down  => Dir::Right,
+                    Dir::Left  => Dir::Up,
+                    Dir::Right => Dir::Down,
                 };
 
-                if let Some((next_col, next_row, next_direction)) = next_pos {
-                    Collision::Reflection(
-                        Beam::new(next_col, next_row, next_direction)
-                    )
+                if let Some(reflected_beam) = self.moved_to_direction(next_direction) {
+                    Collision::Reflection(reflected_beam)
                 } else {
                     Collision::Death
                 }
@@ -129,26 +122,21 @@ impl Beam {
             Tile::VertSplit => { // '|'
                 match self.direction {
                     Dir::Up | Dir::Down => {
-                        let Some((next_col, next_row)) = self.next_position() else {
-                            return Collision::Death
-                        };
-
-                        Collision::Continue(Beam::new(next_col, next_row, self.direction))
+                        if let Some(beam) = self.moved_to_direction(self.direction) {
+                            Collision::Continue(beam)
+                        } else {
+                            Collision::Death
+                        }
                     },
                     Dir::Left | Dir::Right => {
-                        // Splits into up and down beams
-                        // order of splits doesn't matter as beam don't interact with each other
-                        // If either beam goes out of lower bounds, the reflection
-                        // degenerates into single mirror reflection.
-                        if let Some(up_row) = self.row.checked_sub(1) {
-                            Collision::Split(
-                                Beam::new(self.col, up_row, Dir::Up),
-                                Beam::new(self.col, self.row + 1, Dir::Down),
-                            )
-                        } else {
-                            Collision::Reflection( 
-                                Beam::new(self.col, self.row + 1, Dir::Down),
-                            )
+                        let up = self.copied_to_direction(Dir::Up);
+                        let down = self.moved_to_direction(Dir::Down);
+
+                        match (up, down) {
+                            (None, Some(beam)) => Collision::Reflection(beam),
+                            (Some(beam), None) => Collision::Reflection(beam),
+                            (Some(up), Some(down)) => Collision::Split(up, down),
+                            (None, None) => Collision::Death,
                         }
                     }
                 }
@@ -156,32 +144,37 @@ impl Beam {
             Tile::HorSplit => { // '-'
                 match self.direction {
                     Dir::Left | Dir::Right => {
-                        let Some((next_col, next_row)) = self.next_position() else {
-                            return Collision::Death
-                        };
-
-                        Collision::Continue(Beam::new(next_col, next_row, self.direction))
+                        if let Some(beam) = self.moved_to_direction(self.direction) {
+                            Collision::Continue(beam)
+                        } else {
+                            Collision::Death
+                        }
                     },
                     Dir::Up | Dir::Down => {
-                        if let Some(left_col) = self.col.checked_sub(1) {
-                            Collision::Split(
-                                Beam::new(left_col, self.row, Dir::Left),
-                                Beam::new(self.col + 1, self.row, Dir::Right),
-                            )
-                        } else {
-                            Collision::Reflection( 
-                                Beam::new(self.col + 1, self.row, Dir::Right),
-                            )
+                        let left = self.copied_to_direction(Dir::Left);
+                        let right = self.moved_to_direction(Dir::Right);
+
+                        match (left, right) {
+                            (None, Some(beam)) => Collision::Reflection(beam),
+                            (Some(beam), None) => Collision::Reflection(beam),
+                            (Some(left), Some(right)) => Collision::Split(left, right),
+                            (None, None) => Collision::Death,
                         }
                     }
                 }
             },
-            Tile::Empty => unreachable!(),
+            Tile::Empty => {
+                if let Some(beam) = self.moved_to_direction(self.direction) {
+                    Collision::Continue(beam)
+                } else {
+                    Collision::Death
+                }
+            },
         }
     }
 }
 
-fn solve(mirrors: &Grid<Tile>, start: Beam) -> usize {
+fn solve(start: Beam) -> usize {
     // List of beams, a new beam gets added each time a splitter is encountered.
     // Beams may also "die out" if they hit grid edges
     let mut beams: VecDeque<Beam> = vec![start.clone()].into();
@@ -192,36 +185,26 @@ fn solve(mirrors: &Grid<Tile>, start: Beam) -> usize {
     seen.insert(start.position());
 
     while let Some(beam) = beams.pop_front() {
-        match beam.collide_with(mirrors) {
+        match beam.collide() {
             Collision::Continue(beam) => {
-                // println!("continue: {:?}", &beam);
-                if mirrors.get(beam.row, beam.col).is_some() {
-                    seen.insert(beam.position());
-                    beams.push_back(beam)
-                }
+                seen.insert(beam.position());
+                beams.push_back(beam);
             },
             Collision::Reflection(beam) => {
-                // seen.insert(mirror_pos);
-                // println!(" reflect: {:?}", &beam);
-                if mirrors.get(beam.row, beam.col).is_some() {
-                    seen.insert(beam.position());
-                    beams.push_back(beam);
-                }
+                seen.insert(beam.position());
+                beams.push_back(beam);
             },
             Collision::Split(first, second) => {
-                // seen.insert(mirror_pos);
-                // println!("   split: {:?}", &first);
-                // println!("          {:?}", &second);
-                if mirrors.get(first.row, first.col).is_some() && mirrors.get(second.row, second.col).is_some() {
-                    if !seen.contains(&first.position()) {
-                        seen.insert(first.position());
-                        beams.push_back(first);
-                    }
+                // Check if we are going to loop
+                // i.e. we are revisiting a point from same angle
+                if !seen.contains(&first.position()) {
+                    seen.insert(first.position());
+                    beams.push_back(first);
+                }
 
-                    if !seen.contains(&second.position()) {
-                        seen.insert(second.position());
-                        beams.push_back(second);
-                    }
+                if !seen.contains(&second.position()) {
+                    seen.insert(second.position());
+                    beams.push_back(second);
                 }
             },
             Collision::Death => {
@@ -230,7 +213,11 @@ fn solve(mirrors: &Grid<Tile>, start: Beam) -> usize {
         }
     }
 
-    seen.into_iter().map(|(col, row, _)| (col, row)).collect::<HashSet<(usize, usize)>>().len()
+    // Hacky way to count visited points without directions
+    seen.into_iter()
+        .map(|(col, row, _)| (col, row))
+        .collect::<HashSet<(usize, usize)>>()
+        .len()
 }
 
 fn gold(puzzle: &Grid<Tile>) -> usize {
@@ -238,35 +225,33 @@ fn gold(puzzle: &Grid<Tile>) -> usize {
     let mut max: usize = 0;
 
     for col in 0..cols {
-        let downwards_beam = Beam::new(col, 0, Dir::Down);
-        let upwards_beam = Beam::new(col, rows-1, Dir::Up);
+        let downwards_beam = Beam::new_in_grid(col, 0, Dir::Down, &puzzle);
+        let upwards_beam = Beam::new_in_grid(col, rows-1, Dir::Up, &puzzle);
 
-        let tiles = solve(&puzzle, downwards_beam);
+        let tiles = solve(downwards_beam);
         if tiles > max {
             max = tiles;
         }
 
-        let tiles = solve(&puzzle, upwards_beam);
+        let tiles = solve(upwards_beam);
         if tiles > max {
             max = tiles;
         }
     }
 
     for row in 0..rows {
-        let rightward_beam = Beam::new(0, row, Dir::Right);
-        let leftward_beam = Beam::new(cols-1, row, Dir::Left);
+        let rightward_beam = Beam::new_in_grid(0, row, Dir::Right, &puzzle);
+        let leftward_beam = Beam::new_in_grid(cols-1, row, Dir::Left, &puzzle);
 
-        let tiles = solve(&puzzle, rightward_beam);
+        let tiles = solve(rightward_beam);
         if tiles > max {
             max = tiles;
         }
-        let tiles = solve(&puzzle, leftward_beam);
+        let tiles = solve(leftward_beam);
         if tiles > max {
             max = tiles;
         }
     }
-
-
 
     max
 }
@@ -275,8 +260,7 @@ fn main() -> anyhow::Result<()> {
     let input = read_input()?;
     let puzzle = parse(&input);
 
-    // print_grid(&puzzle);
-    let energized_tiles = solve(&puzzle, Beam::new(0, 0, Dir::Right));
+    let energized_tiles = solve(Beam::new_in_grid(0, 0, Dir::Right, &puzzle));
     println!("Silver: {}", energized_tiles);
 
     let maxed = gold(&puzzle);
@@ -287,9 +271,9 @@ fn main() -> anyhow::Result<()> {
 
 fn parse(s: &str) -> Grid<Tile> {
     let mut tiles = Vec::new();
-    let cols = s.lines().next().unwrap().len();
+    let cols = s.lines().next().expect("got empty input").len();
     
-    for tile in s.trim().chars().filter(|ch| !ch.is_ascii_whitespace()) {
+    for tile in s.chars().filter(|ch| !ch.is_ascii_whitespace()) {
         tiles.push(Tile::from_char(tile));
     }
 
@@ -309,21 +293,15 @@ impl std::fmt::Display for Tile {
     }
 }
 
-fn print_energized(map: &HashSet<(usize, usize, Dir)>, bounds: (usize, usize)) -> std::io::Result<()> {
-    let unrolled: HashSet<(usize, usize)> = map.into_iter().map(|&(col, row, _)| (col, row)).collect();
-
-    use std::io::Write;
-    let mut lock = std::io::stdout().lock();
-    for row in 0..bounds.0 {
-        for col in 0..bounds.1 {
-            if unrolled.contains(&(col, row)) {
-                write!(lock, "#")?;
-            } else {
-                write!(lock, ".")?;
-            }
+impl Tile {
+    fn from_char(tile: char) -> Tile {
+        match tile {
+            '.' => Self::Empty,
+            '/' => Self::ForwardMirror,
+            '\\' => Self::BackwardMirror,
+            '|' => Self::VertSplit,
+            '-' => Self::HorSplit,
+            _ => panic!("invalid tile '{tile}'"),
         }
-        write!(lock, "\n")?;
     }
-
-    Ok(())
 }
