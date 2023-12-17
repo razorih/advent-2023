@@ -57,12 +57,20 @@ impl Node {
 
         // Check move limit
         let moved = if self.direction == direction {
+            // Moving forward
             self.moved + 1
         } else {
+            // Turning
+            // Ultra crucible rule, turning below 4 moves forward is not allowed
+            if self.moved < 4 {
+                return None;
+            }
+
             1
         };
 
-        if moved > 3 {
+        // Ultra crucible rules
+        if moved > 10 {
             // Exceeded move limit, invalid node
             // println!("!! abandoning direction !!");
             return None
@@ -146,7 +154,7 @@ fn main() -> anyhow::Result<()> {
     print_grid(&grid);
     let min_cost = solve(&grid, (grid.rows()-1, grid.cols()-1));
 
-    println!("Silver: {}", min_cost);
+    println!("Gold: {}", min_cost);
 
     Ok(())
 }
