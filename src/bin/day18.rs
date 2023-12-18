@@ -87,12 +87,17 @@ fn parse(s: &str) -> (Vec<(isize, isize)>, usize) {
 
     for line in s.trim().lines() {
         let mut parts = line.splitn(3, ' ');
-        let (direction, amount) = (
+        let (_, _, (direction, amount)) = (
             parts.next()
                 .and_then(|dir| Direction::try_from(dir.chars().next()?).ok())
                 .unwrap(),
             parts.next()
                 .and_then(|n| n.parse::<usize>().ok())
+                .unwrap(),
+            parts.next()
+                .and_then(|color| color.strip_prefix("(#"))
+                .and_then(|color| color.strip_suffix(')'))
+                .map(parse_rgb)
                 .unwrap(),
         );
 
@@ -102,14 +107,27 @@ fn parse(s: &str) -> (Vec<(isize, isize)>, usize) {
     digger.finish()
 }
 
+fn parse_rgb(s: &str) -> (Direction, usize) {
+    let amount = usize::from_str_radix(&s[..5], 16).unwrap();
+    let direction = s.chars().last().and_then(|dir| Direction::try_from(dir).ok());
+
+    (direction.unwrap(), amount)
+}
+
 impl TryFrom<char> for Direction {
     type Error = anyhow::Error;
     fn try_from(value: char) -> Result<Self, Self::Error> {
         let inner = match value {
+            // Silver
             'R' => Self::Right,
             'L' => Self::Left,
             'D' => Self::Down,
             'U' => Self::Up,
+            // Gold
+            '0' => Self::Right,
+            '1' => Self::Down,
+            '2' => Self::Left,
+            '3' => Self::Up,
             _ => return Err(anyhow!("invalid direction"))
         };
 
