@@ -1,10 +1,10 @@
 use std::collections::{BinaryHeap, HashSet};
 
-use advent::{read_input, print_grid};
+use advent::read_input;
 use grid::Grid;
 
 /// A frontier node in uniform-cost search
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct Node {
     /// Current cumulative cost
     cost: usize,
@@ -13,11 +13,17 @@ struct Node {
     /// - Moved: How many times we have moved in a single direction
     /// - Direction: The direction we entered this node
     pos: (usize, usize),
-    /// How many times we have moved to this "direction" during the search.
-    /// Never exceeds 3
+    /// How many times we have moved to this `direction` during the search.
     moved: u8,
     /// What direction we came from, used for neighbour discovery
     direction: Direction,
+}
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+struct VisitedNode {
+    pos: (usize, usize),
+    moved: u8,
+    direction: Direction
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -39,40 +45,38 @@ impl Node {
         Self { pos, cost, moved, direction }
     }
 
-    /// Discover and return a neighbour in a direction if any
+    /// Discover and return a neighbour in given direction if any
     fn discover(
         &self,
         direction: Direction,
         grid: &Grid<u8>,
     ) -> Option<Self> {
-        let offset: (i8, i8) = direction.as_offset();
+        let (row, col) = self.pos;
+        let (row_offset, col_offset) = direction.as_offset();
+        let next_row = row.checked_add_signed(row_offset as isize)?;
+        let next_col = col.checked_add_signed(col_offset as isize)?;
 
-        // Calculate next coordinate based on absolute direction
-        // Out of bounds nodes are not valid discoveries
-        let next_row = self.pos.0.checked_add_signed(offset.0 as isize)
-            .and_then(|row| if row < grid.rows() { Some(row) } else { None })?;
-        let next_col = self.pos.1.checked_add_signed(offset.1 as isize)
-            .and_then(|col| if col < grid.cols() { Some(col) } else { None })?;
+        if next_col >= grid.cols() || next_row >= grid.rows() {
+            return None
+        }
+
         let new_pos = (next_row, next_col);
 
         // Check move limit
         let moved = if self.direction == direction {
-            // Moving forward
             self.moved + 1
         } else {
-            // Turning
-            // Ultra crucible rule, turning below 4 moves forward is not allowed
+            // Ultra crucible must have moved at least 4 tiles forward before
+            // being able to turn
             if self.moved < 4 {
-                return None;
+                return None
             }
 
             1
         };
 
-        // Ultra crucible rules
+        // Ultra crucible can move a maximum of 10 consecutive tiles
         if moved > 10 {
-            // Exceeded move limit, invalid node
-            // println!("!! abandoning direction !!");
             return None
         }
 
@@ -85,41 +89,27 @@ impl Node {
     }
 }
 
-fn solve(grid: &Grid<u8>, end: (usize, usize)) -> usize {
+fn solve(grid: &Grid<u8>, end: (usize, usize)) -> Option<usize> {
     let mut frontier: BinaryHeap<Node> = BinaryHeap::new();
+    let mut visited: HashSet<VisitedNode> = HashSet::new();
 
-    // As we are starting from top-left, we can manually insert two roots;
-    // one going right and one going down
+    // Insert two "root" nodes, starting from top left.
+    // One going to the right and one going down.
     let start_down  = (1, 0);
     let start_right = (0, 1);
-
-    let mut visited: HashSet<(usize, usize, u8, Direction)> = HashSet::new();
-
-    // Insert root nodes
     frontier.push(Node::new(start_down, grid[start_down] as usize, 1, Direction::Down));
     frontier.push(Node::new(start_right, grid[start_right] as usize, 1, Direction::Right));
 
     while let Some(node) = frontier.pop() {
-        // println!("Enter: {node:?}");
         if node.pos == end {
-            return node.cost;
+            return Some(node.cost)
         }
 
-        // it seems that paths can do weird circles.
-        // solution works if we cache combination of
-        // - node position
-        // - how many tiles we have moved straight
-        // - and what direction we came from
-        if !visited.insert((node.pos.0, node.pos.1, node.moved, node.direction)) {
-            // println!("  already visited, skipping");
-            // Already visited this position, do nothing
-            continue;
+        if !visited.insert(node.into()) {
+            continue
         }
 
-        // Enqueue all neighbours we can possible reach:
-        // - Based on direction, always Left and Right
-        // - Based on direction, Forward if moved < 3
-        
+        // Enqueue all neighbours we can possible reach
         // First, map relative direction to absolute
         let (left, right, forward) = match node.direction {
             Direction::Up    => (Direction::Left,  Direction::Right, Direction::Up),
@@ -128,22 +118,14 @@ fn solve(grid: &Grid<u8>, end: (usize, usize)) -> usize {
             Direction::Right => (Direction::Up,    Direction::Down,  Direction::Right),
         };
 
-        // Try to discover nodes at those directions, if valid
-        // Node discovery handles all out of bounds and move count related cases
-        let left = node.discover(left, &grid);
-        let right = node.discover(right, &grid);
-        let forward = node.discover(forward, &grid);
-
-        // Put valid nodes to the priority queue
-        for node in [left, right, forward] {
-            if let Some(node) = node {
-                // println!("    discover: {node:?}");
-                frontier.push(node)
+        for direction in [left, right, forward] {
+            if let Some(discovered_node) = node.discover(direction, &grid) {
+                frontier.push(discovered_node)
             }
         }
     }
 
-    unreachable!("search didn't find a valid end node")
+    None
 }
 
 
@@ -151,20 +133,20 @@ fn main() -> anyhow::Result<()> {
     let input = read_input()?;
     let grid = parse(&input);
 
-    print_grid(&grid);
     let min_cost = solve(&grid, (grid.rows()-1, grid.cols()-1));
 
-    println!("Gold: {}", min_cost);
+    println!("Gold: {}", min_cost.unwrap());
 
     Ok(())
 }
 
-
 fn parse(s: &str) -> Grid<u8> {
     let cols = s.lines().next().expect("got empty input").len();
     let tiles: Vec<u8> = s.chars()
-        .filter_map(|ch| u8::try_from(ch).ok().and_then(|n| n.checked_sub(b'0')))
-        .collect();
+        .filter_map(|ch| 
+            u8::try_from(ch).ok()
+                .and_then(|n| n.checked_sub(b'0'))
+        ).collect();
 
     Grid::from_vec(tiles, cols)
 }
@@ -190,3 +172,9 @@ impl PartialEq for Node {
 }
 
 impl Eq for Node {}
+
+impl From<Node> for VisitedNode {
+    fn from(value: Node) -> Self {
+        Self { pos: value.pos, moved: value.moved, direction: value.direction }
+    }
+}
