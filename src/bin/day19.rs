@@ -32,9 +32,23 @@ enum RuleResult {
     Next(String),
 }
 
-struct Rule {
-    check: Box<dyn Fn(&Part) -> bool>,
-    outcome: RuleResult,
+#[derive(Debug, Clone, Copy)]
+enum Op {
+    LessThan,
+    GreaterThan,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Condition {
+    field: Field,
+    op: Op,
+    amount: u32,
+}
+
+#[derive(Debug)]
+enum Rule {
+    Conditional(Condition, RuleResult),
+    Pass(RuleResult),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -47,19 +61,33 @@ fn main() -> anyhow::Result<()> {
     let mut accept_score = 0;
 
     let first = &workflows["in"];
+
     for part in parts {
         let mut flow = first.iter();
         while let Some(rule) = flow.next() {
-            if (rule.check)(&part) {
-                // println!("matched rule!");
-                match &rule.outcome {
-                    RuleResult::Accept => { 
-                        accept_score += part.score();
-                        break
-                    },
-                    RuleResult::Reject => break,
-                    RuleResult::Next(next_flow) => flow = workflows[next_flow].iter(),
-                }
+            let res = match rule {
+                Rule::Conditional(cmp, res) => {
+                    let should_pass = match cmp.op {
+                        Op::LessThan    => part.get(cmp.field) < cmp.amount,
+                        Op::GreaterThan => part.get(cmp.field) > cmp.amount,
+                    };
+
+                    if should_pass {
+                        res
+                    } else {
+                        continue
+                    }
+                },
+                Rule::Pass(res) => res
+            };
+
+            match res {
+                RuleResult::Accept => {
+                    accept_score += part.score();
+                    break
+                },
+                RuleResult::Reject => break,
+                RuleResult::Next(next) => flow = workflows[next].iter(),
             }
         }
     }
@@ -102,15 +130,13 @@ fn parse(input: &str) -> (HashMap<String, Vec<Rule>>, Vec<Part>) {
                 let field = Field::from_str(field);
                 let amount = amount.parse::<u32>().unwrap();
 
-                let check_fn: Box<dyn Fn(&Part) -> bool> = match op {
-                    "<" => Box::new(move |part| part.get(field) < amount),
-                    ">" => Box::new(move |part| part.get(field) > amount),
+                let op = match op {
+                    "<" => Op::LessThan,
+                    ">" => Op::GreaterThan,
                     _ => panic!("Invalid op"),
                 };
-                rules.push(Rule {
-                    check: check_fn,
-                    outcome,
-                });
+
+                rules.push(Rule::Conditional(Condition { field, op, amount }, outcome));
             } else {
                 // unconditionally pass on to some other rule or accept/reject
                 let outcome = match rule {
@@ -119,10 +145,7 @@ fn parse(input: &str) -> (HashMap<String, Vec<Rule>>, Vec<Part>) {
                     next => RuleResult::Next(next.to_string())
                 };
 
-                rules.push(Rule {
-                    check: Box::new(|_| true),
-                    outcome,
-                });
+                rules.push(Rule::Pass(outcome));
             }
         }
 
@@ -161,13 +184,5 @@ impl Field {
             "s" => Self::S,
             _ => panic!("invalid field '{s}'"),
         }
-    }
-}
-
-impl std::fmt::Debug for Rule {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Rule")
-            .field("outcome", &self.outcome)
-            .finish()
     }
 }
